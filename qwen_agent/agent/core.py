@@ -28,6 +28,7 @@ class Agent:
             "document_reader": self._document_reader,
             "math_calc": self._math_calc,
             "translator": self._translator,
+            "weather": self._weather,
         }
 
     def run(self, message: str, conversation_history: List[Dict] = None) -> Dict[str, Any]:
@@ -132,3 +133,8 @@ class Agent:
         """翻译工具"""
         from tools.translator import translator
         return translator(text, source_lang, target_lang)
+
+    def _weather(self, city: str) -> Dict[str, Any]:
+        """天气查询工具"""
+        from tools.weather import weather
+        return weather(city)

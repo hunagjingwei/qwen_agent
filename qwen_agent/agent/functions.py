@@ -92,5 +92,19 @@ FUNCTIONS = [
             },
             "required": ["text", "source_lang", "target_lang"]
         }
+    },
+    {
+        "name": "weather",
+        "description": "查询城市天气",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "城市名称，如 "广州", "Beijing", "Guangzhou""
+                }
+            },
+            "required": ["city"]
+        }
     }
 ]
