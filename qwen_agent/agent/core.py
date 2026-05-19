@@ -90,16 +90,39 @@ class Agent:
 
     def _parse_function_call(self, text: str) -> Optional[Dict[str, Any]]:
         """解析 Function Calling 格式"""
+        import re
         try:
-            if "function_call" in text or "Function" in text:
-                # 简单解析 JSON 格式的函数调用
-                start = text.find("{")
-                end = text.rfind("}") + 1
-                if start != -1 and end > start:
-                    json_str = text[start:end]
+            # 查找 JSON 对象（处理 markdown 格式的 function_call）
+            json_pattern = r'\{[^{}]*"name"\s*:\s*"(\w+)"[^{}]*"arguments"\s*:\s*(\{[^}]*\})'
+            match = re.search(json_pattern, text)
+            if match:
+                return {
+                    "name": match.group(1),
+                    "arguments": json.loads(match.group(2))
+                }
+
+            # 备用：尝试直接解析整个 JSON
+            start = text.find('"name"')
+            if start != -1:
+                # 向前找 '{'
+                brace_start = text.rfind('{', 0, start)
+                if brace_start != -1:
+                    # 从 '{' 开始向后找 '}'
+                    depth = 0
+                    end = brace_start
+                    for i, c in enumerate(text[brace_start:], start=brace_start):
+                        if c == '{':
+                            depth += 1
+                        elif c == '}':
+                            depth -= 1
+                            if depth == 0:
+                                end = i + 1
+                                break
+                    json_str = text[brace_start:end]
                     data = json.loads(json_str)
-                    return data
-        except json.JSONDecodeError:
+                    if "name" in data:
+                        return data
+        except (json.JSONDecodeError, Exception):
             pass
         return None
 
