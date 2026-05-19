@@ -101,7 +101,7 @@ FUNCTIONS = [
             "properties": {
                 "city": {
                     "type": "string",
-                    "description": "城市名称，如 "广州", "Beijing", "Guangzhou""
+                    "description": "城市名称，如 '广州', 'Beijing', 'Guangzhou'"
                 }
             },
             "required": ["city"]
