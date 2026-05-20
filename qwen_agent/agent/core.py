@@ -6,9 +6,9 @@
    - 原因：vLLM + Qwen3.5 的原生 Function Calling 响应 finish_reason 始终为 "stop"，
      未正确触发 tool_calls 模式，因此改用文本解析方案
 3. FUNCTIONS: 定义了工具的 JSON Schema，原本用于 vLLM 原生 Function Calling，
-     现用于参考工具定义和文档说明
+   现用于参考工具定义和文档说明
 4. CHAT_TEMPLATE: Qwen 的 Jinja2 聊天模板格式，用于 generate() API，
-     当前使用 chat() API 时由 vLLM 自动处理消息格式，故未使用
+   当前使用 chat() API 时由 vLLM 自动处理消息格式，故未使用
 """
 
 import json
@@ -19,6 +19,7 @@ from vllm import SamplingParams
 
 from .functions import FUNCTIONS  # 工具定义，用于文档说明
 from .prompts import SYSTEM_PROMPT, CHAT_TEMPLATE  # CHAT_TEMPLATE 当前未使用
+
 
 class Agent:
     def __init__(
@@ -65,7 +66,7 @@ class Agent:
         response = outputs[0]
         response_text = response.outputs[0].text
 
-        # 从文本中解析 <tool_call><function=xxx><parameter=xxx>xxx
+        # 从文本中解析 <tool_call> 标签
         tool_call = self._parse_tool_call(response_text)
 
         if tool_call:
@@ -89,33 +90,60 @@ class Agent:
     def _parse_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
         """从模型输出的文本中解析工具调用
 
-        模型输出格式示例：
+        支持的格式：
         <tool_call>
-        <function=weather>
-        <parameter=city>
-        广州</tool_call>'
+        <function=code_executor>
+        <parameter=language>
+        python
+        </parameter>
+        <parameter=code>
+        print("hello")
+        </parameter>
+        </tool_call>
         """
-        pattern = r'<function=(\w+)>.*?<parameter=(\w+)>\s*([^<]+)'
+        # 模式1：完整 XML 格式 <function=xxx><parameter=yyy>zzz</parameter>
+        pattern1 = r'<function=(\w+)>\s*<parameter=(\w+)>\s*([^<]+?)(?:</parameter>|$)'
         try:
-            match = re.search(pattern, text, re.DOTALL)
-            if match:
-                return {
-                    "name": match.group(1),
-                    "arguments": match.group(3).strip()
-                }
+            # 先匹配整个 tool_call 块
+            tool_block = re.search(r'<tool_call>\s*(<function=\w+>.*?)</tool_call>', text, re.DOTALL)
+            if tool_block:
+                block_content = tool_block.group(1)
+                func_match = re.search(r'<function=(\w+)>', block_content)
+                param_match = re.search(r'<parameter=(\w+)>\s*([^<]+?)\s*(?:</parameter>|$)', block_content)
+                if func_match and param_match:
+                    return {
+                        "name": func_match.group(1),
+                        "arguments": {param_match.group(1): param_match.group(2).strip()}
+                    }
         except Exception:
             pass
+
+        # 模式2：检测是否提到要使用某个工具但格式不正确
+        # 如果文本中提到"用xxx计算"、"执行代码"等但没有正确格式
+        text_lower = text.lower()
+        if 'code_executor' in text_lower or ('代码' in text and '执行' in text):
+            # 尝试提取代码块
+            code_blocks = re.findall(r'```python\s*(.*?)```', text, re.DOTALL)
+            if code_blocks:
+                code = code_blocks[0].strip()
+                return {
+                    "name": "code_executor",
+                    "arguments": {"language": "python", "code": code}
+                }
+
         return None
 
-    def _execute_tool(self, tool_name: str, tool_args: str) -> Any:
+    def _execute_tool(self, tool_name: str, tool_args: Dict[str, str]) -> Any:
+        """执行工具"""
         if tool_name in self.tools:
-            return self.tools[tool_name](tool_args)
+            return self.tools[tool_name](**tool_args)
         return {"error": f"Unknown tool: {tool_name}"}
 
     def _chat(self, text: str) -> str:
         return f"chat: {text}"
 
-    def _code_executor(self, code: str) -> str:
+    def _code_executor(self, language: str, code: str) -> str:
+        """执行 Python 代码"""
         try:
             import subprocess
             result = subprocess.run(
@@ -128,24 +156,26 @@ class Agent:
         except Exception as e:
             return str(e)
 
-    def _document_reader(self, path: str) -> str:
+    def _document_reader(self, file_path: str) -> str:
+        """读取文档"""
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
             return str(e)
 
-    def _math_calc(self, expr: str) -> str:
+    def _math_calc(self, expression: str) -> str:
+        """计算数学表达式"""
         try:
             import ast
             import operator
             ops = {"+": operator.add, "-": operator.sub, "*": operator.mul, "/": operator.truediv}
-            tree = ast.parse(expr, mode="eval")
+            tree = ast.parse(expression, mode="eval")
             return str(eval(compile(tree, "<string>", "eval")))
         except Exception as e:
             return str(e)
 
-    def _translator(self, text: str) -> str:
+    def _translator(self, text: str, source_lang: str, target_lang: str) -> str:
         return f"translated: {text}"
 
     def _weather(self, city: str) -> str:
