@@ -53,7 +53,9 @@ class Agent:
         response = outputs[0]
 
         # 检查是否触发了工具调用
-        if response.finish_reason == "tool_calls":
+        # vLLM 中 finish_reason 在 outputs[0] 上
+        finish_reason = response.outputs[0].finish_reason if hasattr(response.outputs[0], 'finish_reason') else None
+        if finish_reason == "tool_calls":
             tool_calls = response.outputs[0].tool_calls
             results = []
 
