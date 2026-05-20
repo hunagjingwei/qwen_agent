@@ -28,6 +28,7 @@ def main():
         sys.exit(1)
 
     conversation_history = []
+    max_history = 10  # 最多保留10轮对话
 
     while True:
         try:
@@ -42,7 +43,12 @@ def main():
 
             with console.status("[bold green]思考中...[/bold green]"):
                 result = agent.run(user_input, conversation_history)
-                conversation_history = result["messages"]
+
+            # 更新对话历史，最多保留 max_history 轮（去除 system prompt）
+            conversation_history = result["messages"]
+            if len(conversation_history) > max_history * 2 + 1:
+                # 保留 system prompt + 最近 max_history 轮对话
+                conversation_history = [conversation_history[0]] + conversation_history[-max_history * 2:]
 
             response = result["response"]
             console.print(Panel(response, title="[bold green]Assistant[/bold green]", border_style="green"))

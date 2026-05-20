@@ -66,6 +66,7 @@ class Agent:
         response_text = response.outputs[0].text
 
         # 从文本中解析 <tool_call><function=xxx><parameter=xxx>xxx
+        tool_call = self._parse_tool_call(response_text)
 
         if tool_call:
             tool_name = tool_call["name"]
