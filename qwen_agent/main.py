@@ -11,9 +11,55 @@ console = Console()
 
 MODEL_PATH = "/home/wujie/LLM_project/Qwen3.5-4B"
 
+
+def truncate_history(messages, max_rounds=10):
+    """截断对话历史，保留 system prompt + 最近 N 轮完整对话
+
+    Args:
+        messages: 对话消息列表
+        max_rounds: 最多保留的对话轮数
+
+    Returns:
+        截断后的消息列表
+    """
+    if not messages:
+        return messages
+
+    # 始终保留 system prompt（第一条消息）
+    system_prompt = messages[0] if messages[0].get("role") == "system" else None
+
+    # 如果没有 system prompt 或只有 system prompt，直接返回
+    if system_prompt is None or len(messages) == 1:
+        return messages
+
+    # 提取非 system 消息
+    non_system = messages[1:]
+
+    # 找到所有 user message 的位置（每轮对话的开始）
+    user_positions = []
+    for i, msg in enumerate(non_system):
+        if msg.get("role") == "user":
+            user_positions.append(i)
+
+    # 如果对话轮数未超过限制，直接返回
+    if len(user_positions) <= max_rounds:
+        return messages
+
+    # 计算需要保留的起始位置
+    # 保留最后 max_rounds 轮对话
+    start_pos = user_positions[-max_rounds]
+
+    # 重新构建消息列表
+    result = [system_prompt] + non_system[start_pos:]
+
+    print(f"[DEBUG] History truncated: {len(messages)} -> {len(result)} messages ({len(user_positions)} -> {max_rounds} rounds)", file=sys.stderr)
+
+    return result
+
+
 def main():
     console.print(Panel("[bold blue]Qwen3.5-4B Agent[/bold blue]\n基于 Function Calling 的智能助手"))
-    console.print()
+    console.print("[dim]输入 'clear' 清空对话历史，输入 'exit' 退出[/dim]\n")
 
     try:
         agent = Agent(
@@ -28,27 +74,28 @@ def main():
         sys.exit(1)
 
     conversation_history = []
-    max_history = 10  # 最多保留10轮对话
+    MAX_ROUNDS = 10  # 最多保留10轮对话
 
     while True:
         try:
             user_input = console.input("[bold cyan]>>> [/bold cyan]")
 
-            if user_input.lower() in ["exit", "quit", "退出"]:
+            # 处理特殊命令
+            if user_input.lower() in ["exit", "quit"]:
                 console.print("[yellow]再见！[/yellow]")
                 break
+
+            if user_input.lower() == "clear":
+                conversation_history = []
+                console.print("[yellow]对话历史已清空[/yellow]\n")
+                continue
 
             if not user_input.strip():
                 continue
 
             with console.status("[bold green]思考中...[/bold green]"):
                 result = agent.run(user_input, conversation_history)
-
-            # 更新对话历史，最多保留 max_history 轮（去除 system prompt）
-            conversation_history = result["messages"]
-            if len(conversation_history) > max_history * 2 + 1:
-                # 保留 system prompt + 最近 max_history 轮对话
-                conversation_history = [conversation_history[0]] + conversation_history[-max_history * 2:]
+                conversation_history = truncate_history(result["messages"], MAX_ROUNDS)
 
             response = result["response"]
             console.print(Panel(response, title="[bold green]Assistant[/bold green]", border_style="green"))
