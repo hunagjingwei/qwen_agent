@@ -1,5 +1,6 @@
 """Agent 核心逻辑"""
 import json
+import sys
 from typing import Dict, Any, List, Optional
 import vllm
 from vllm import SamplingParams
@@ -55,6 +56,11 @@ class Agent:
         # 检查是否触发了工具调用
         # vLLM 中 finish_reason 在 outputs[0] 上
         finish_reason = response.outputs[0].finish_reason if hasattr(response.outputs[0], 'finish_reason') else None
+
+        # 调试：打印实际值
+        print(f"[DEBUG] finish_reason: {finish_reason}", file=sys.stderr)
+        print(f"[DEBUG] has tool_calls attr: {hasattr(response.outputs[0], 'tool_calls')}", file=sys.stderr)
+
         if finish_reason == "tool_calls":
             tool_calls = response.outputs[0].tool_calls
             results = []
