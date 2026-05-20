@@ -35,6 +35,9 @@ class Agent:
     def run(self, message: str, conversation_history: List[Dict] = None) -> Dict[str, Any]:
         """运行 Agent 处理用户消息"""
         messages = conversation_history or []
+        # 添加系统提示词
+        if not any(msg.get("role") == "system" for msg in messages):
+            messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
         messages.append({"role": "user", "content": message})
 
         # 调用 vLLM chat（支持 Function Calling）
