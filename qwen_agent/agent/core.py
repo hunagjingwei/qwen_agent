@@ -1,7 +1,8 @@
 """Agent 核心逻辑"""
 import json
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional
 import vllm
+from vllm import SamplingParams
 
 from .functions import FUNCTIONS
 from .prompts import SYSTEM_PROMPT, CHAT_TEMPLATE
@@ -36,95 +37,61 @@ class Agent:
         messages = conversation_history or []
         messages.append({"role": "user", "content": message})
 
-        # 构建 prompt
-        prompt = self._build_prompt(messages)
-
-        # 调用 vLLM
-        sampling_params = vllm.SamplingParams(
+        # 调用 vLLM chat（支持 Function Calling）
+        sampling_params = SamplingParams(
             temperature=0.7,
             max_tokens=2048,
-            stop=["<|im_end|>"]
         )
-        outputs = self.llm.generate([prompt], sampling_params)
-        response_text = outputs[0].outputs[0].text
+        outputs = self.llm.chat(
+            messages=messages,
+            sampling_params=sampling_params,
+            tools=FUNCTIONS,
+        )
+        response = outputs[0]
 
-        # 解析 Function Calling
-        result = self._parse_function_call(response_text)
+        # 检查是否触发了工具调用
+        if response.finish_reason == "tool_calls":
+            tool_calls = response.outputs[0].tool_calls
+            results = []
 
-        if result:
-            # 执行工具
-            tool_name = result["name"]
-            tool_args = result["arguments"]
-            tool_result = self._execute_tool(tool_name, tool_args)
+            for tool_call in tool_calls:
+                tool_name = tool_call.name
+                tool_args = tool_call.args
 
-            # 将工具结果加入对话
-            messages.append({"role": "assistant", "content": response_text})
-            messages.append({
-                "role": "tool",
-                "name": tool_name,
-                "content": json.dumps(tool_result, ensure_ascii=False)
-            })
+                # 执行工具
+                tool_result = self._execute_tool(tool_name, tool_args)
+
+                # 将工具调用和结果加入消息
+                messages.append({
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": tool_call.id,
+                            "function": {
+                                "name": tool_name,
+                                "arguments": json.dumps(tool_args)
+                            }
+                        }
+                    ]
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(tool_result, ensure_ascii=False)
+                })
+                results.append({"tool": tool_name, "result": tool_result})
 
             # 再次调用模型生成最终回复
-            final_prompt = self._build_prompt(messages)
-            outputs = self.llm.generate([final_prompt], sampling_params)
-            final_response = outputs[0].outputs[0].text
-
+            final_outputs = self.llm.chat(
+                messages=messages,
+                sampling_params=sampling_params,
+                tools=FUNCTIONS,
+            )
+            final_response = final_outputs[0].outputs[0].text
             return {"response": final_response, "messages": messages}
         else:
-            return {"response": response_text, "messages": messages}
-
-    def _build_prompt(self, messages: List[Dict]) -> str:
-        prompt = SYSTEM_PROMPT + "\n\n"
-        for msg in messages:
-            role = msg["role"]
-            content = msg["content"]
-            if role == "user":
-                prompt += f"<|im_start|>user\n{content}<|im_end|>\n"
-            elif role == "assistant":
-                prompt += f"<|im_start|>assistant\n{content}<|im_end|>\n"
-            elif role == "tool":
-                prompt += f"<|im_start|>tool\nname={msg.get('name', 'unknown')}\n{content}<|im_end|>\n"
-        prompt += "<|im_start|>assistant\n"
-        return prompt
-
-    def _parse_function_call(self, text: str) -> Optional[Dict[str, Any]]:
-        """解析 Function Calling 格式"""
-        import re
-        try:
-            # 查找 JSON 对象（处理 markdown 格式的 function_call）
-            json_pattern = r'\{[^{}]*"name"\s*:\s*"(\w+)"[^{}]*"arguments"\s*:\s*(\{[^}]*\})'
-            match = re.search(json_pattern, text)
-            if match:
-                return {
-                    "name": match.group(1),
-                    "arguments": json.loads(match.group(2))
-                }
-
-            # 备用：尝试直接解析整个 JSON
-            start = text.find('"name"')
-            if start != -1:
-                # 向前找 '{'
-                brace_start = text.rfind('{', 0, start)
-                if brace_start != -1:
-                    # 从 '{' 开始向后找 '}'
-                    depth = 0
-                    end = brace_start
-                    for i, c in enumerate(text[brace_start:], start=brace_start):
-                        if c == '{':
-                            depth += 1
-                        elif c == '}':
-                            depth -= 1
-                            if depth == 0:
-                                end = i + 1
-                                break
-                    json_str = text[brace_start:end]
-                    data = json.loads(json_str)
-                    if "name" in data:
-                        return data
-        except (json.JSONDecodeError, Exception):
-            pass
-        return None
+            return {"response": response.outputs[0].text, "messages": messages}
 
     def _execute_tool(self, name: str, args: Dict) -> Dict[str, Any]:
         """执行工具"""
