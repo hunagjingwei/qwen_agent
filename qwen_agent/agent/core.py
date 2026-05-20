@@ -1,12 +1,24 @@
-"""Agent 核心逻辑"""
+"""Agent 核心逻辑
+
+当前实现说明：
+1. 使用 vLLM 的 chat() API 进行对话
+2. 工具调用通过文本解析实现（从模型输出的 <tool_call> 标签中提取）
+   - 原因：vLLM + Qwen3.5 的原生 Function Calling 响应 finish_reason 始终为 "stop"，
+     未正确触发 tool_calls 模式，因此改用文本解析方案
+3. FUNCTIONS: 定义了工具的 JSON Schema，原本用于 vLLM 原生 Function Calling，
+     现用于参考工具定义和文档说明
+4. CHAT_TEMPLATE: Qwen 的 Jinja2 聊天模板格式，用于 generate() API，
+     当前使用 chat() API 时由 vLLM 自动处理消息格式，故未使用
+"""
+
 import json
 import re
 from typing import Dict, Any, List, Optional
 import vllm
 from vllm import SamplingParams
 
-from .functions import FUNCTIONS
-from .prompts import SYSTEM_PROMPT, CHAT_TEMPLATE
+from .functions import FUNCTIONS  # 工具定义，用于文档说明
+from .prompts import SYSTEM_PROMPT, CHAT_TEMPLATE  # CHAT_TEMPLATE 当前未使用
 
 class Agent:
     def __init__(
@@ -34,6 +46,15 @@ class Agent:
         }
 
     def run(self, message: str, conversation_history: List[Dict] = None) -> Dict[str, Any]:
+        """处理用户消息，支持工具调用
+
+        流程：
+        1. 添加 system prompt 到消息列表
+        2. 调用 vLLM chat 获取回复
+        3. 解析回复文本中的 <tool_call> 标签
+        4. 如有工具调用，执行工具并将结果加入消息
+        5. 再次调用 vLLM 生成最终回复
+        """
         messages = conversation_history or []
         if not any(msg.get("role") == "system" for msg in messages):
             messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
@@ -44,7 +65,7 @@ class Agent:
         response = outputs[0]
         response_text = response.outputs[0].text
 
-        tool_call = self._parse_tool_call(response_text)
+        # 从文本中解析 <tool_call><function=xxx><parameter=xxx>xxx
 
         if tool_call:
             tool_name = tool_call["name"]
@@ -65,8 +86,16 @@ class Agent:
             return {"response": response_text, "messages": messages}
 
     def _parse_tool_call(self, text: str) -> Optional[Dict[str, Any]]:
+        """从模型输出的文本中解析工具调用
+
+        模型输出格式示例：
+        <tool_call>
+        <function=weather>
+        <parameter=city>
+        广州</tool_call>'
+        """
+        pattern = r'<function=(\w+)>.*?<parameter=(\w+)>\s*([^<]+)'
         try:
-            pattern = r'<tool_call>\s*<function=(\w+)>\s*<parameter=(\w+)>\s*([^<]+)\s*</tool_call>'
             match = re.search(pattern, text, re.DOTALL)
             if match:
                 return {
