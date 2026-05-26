@@ -24,3 +24,23 @@ def test_agent_build_messages_with_rag():
 
             messages = agent._build_messages("计算 1+1", [])
             assert any("相关历史经验" in str(m) for m in messages), f"Expected RAG context in messages, got: {messages}"
+
+
+def test_agent_save_conversation_indexes_qa():
+    """Test that save_conversation auto-indexes QA pairs to RAG"""
+    with patch('agent.core.vllm') as mock_vllm:
+        mock_vllm.LLM.return_value = Mock()
+        agent = Agent(model_path="/tmp/model")
+
+        agent.rag_retriever = Mock()
+        agent.history_storage = Mock()
+
+        messages = [
+            {"role": "user", "content": "计算 1+1"},
+            {"role": "assistant", "content": "2"},
+        ]
+
+        agent.save_conversation("session1", messages)
+
+        agent.rag_retriever.index_conversation.assert_called_once_with(messages)
+        agent.history_storage.save.assert_called_once()
