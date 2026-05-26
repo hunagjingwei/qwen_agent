@@ -402,6 +402,13 @@ class Agent:
         # RAG 检索器
         self.rag_retriever = RAGRetriever()
 
+        # 尝试加载已有索引
+        try:
+            self.rag_retriever.load_index()
+            print("[INFO] RAG index loaded from disk")
+        except Exception as e:
+            print(f"[INFO] No existing RAG index, will build new one: {e}")
+
         self.tool_registry = {
             "chat": self._chat_tool,
             "code_executor": self._code_executor_tool,
