@@ -44,3 +44,4 @@ def test_agent_save_conversation_indexes_qa():
 
         agent.rag_retriever.index_conversation.assert_called_once_with(messages)
         agent.history_storage.save.assert_called_once()
+        agent.rag_retriever.save_index.assert_called_once()
