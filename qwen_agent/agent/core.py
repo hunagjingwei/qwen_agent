@@ -890,6 +890,11 @@ class Agent:
         """保存对话到历史存储"""
         self.history_storage.save(session_id, messages, metadata)
 
+        # 自动索引 QA 对到 RAG
+        if self.rag_retriever:
+            self.rag_retriever.index_conversation(messages)
+            self.rag_retriever.save_index()
+
     def load_conversation(self, session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         """加载对话历史"""
         return self.history_storage.load(session_id, limit)
