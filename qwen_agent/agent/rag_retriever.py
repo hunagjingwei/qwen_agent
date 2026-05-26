@@ -1,4 +1,6 @@
 """RAG 检索器 - 整合向量检索和 QA 提取"""
+import os
+
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from .vector_store import VectorStore
@@ -90,17 +92,21 @@ class RAGRetriever:
     def save_index(self):
         """保存索引到磁盘"""
         if self.vector_store:
-            import os
             os.makedirs(self.index_dir, exist_ok=True)
             index_path = f"{self.index_dir}/vector_store.faiss"
             self.vector_store.save(index_path)
 
-    def load_index(self):
+    def load_index(self) -> bool:
         """从磁盘加载索引"""
-        import os
         index_path = f"{self.index_dir}/vector_store.faiss"
-        if os.path.exists(index_path):
+        if not os.path.exists(index_path):
+            return False
+        try:
             self._init_embedding_model()
             dimension = self.embedding_model.get_sentence_embedding_dimension()
             self.vector_store = VectorStore(dimension=dimension)
             self.vector_store.load(index_path)
+            return True
+        except Exception as e:
+            print(f"[WARN] Failed to load RAG index: {e}")
+            return False
