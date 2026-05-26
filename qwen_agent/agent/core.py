@@ -736,15 +736,6 @@ class Agent:
                 "error": str(e),
                 "tool_name": tool_name
             }
-        except Exception as e:
-            print(f"[DEBUG] _execute_tool exception: {e}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            return {
-                "success": False,
-                "error": str(e),
-                "tool_name": tool_name
-            }
 
     def _chat_tool(self, message: str) -> Dict[str, Any]:
         """通用对话工具"""
