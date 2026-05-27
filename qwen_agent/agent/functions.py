@@ -106,5 +106,53 @@ FUNCTIONS = [
             },
             "required": ["city"]
         }
+    },
+    {
+        "name": "savings_find_year",
+        "description": "逐年存款计算，多少年后达到目标金额",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "annual_deposit": {
+                    "type": "number",
+                    "description": "每年存款金额(如 150000)"
+                },
+                "annual_rate": {
+                    "type": "number",
+                    "description": "年利率(如 0.03)"
+                },
+                "target": {
+                    "type": "number",
+                    "description": "目标金额(如 1000000)"
+                },
+                "initial_principal": {
+                    "type": "number",
+                    "description": "初始本金(已有存款，如 400000)"
+                }
+            },
+            "required": ["annual_deposit", "annual_rate", "target"]
+        }
+    },
+    {
+        "name": "savings_accumulation",
+        "description": "逐年存款计算，n年后的存款总额",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "annual_deposit": {
+                    "type": "number",
+                    "description": "每年存款金额(如 150000)"
+                },
+                "annual_rate": {
+                    "type": "number",
+                    "description": "年利率(如 0.03)"
+                },
+                "years": {
+                    "type": "integer",
+                    "description": "存款年数(如 10)"
+                }
+            },
+            "required": ["annual_deposit", "annual_rate", "years"]
+        }
     }
 ]

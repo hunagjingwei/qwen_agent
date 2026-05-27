@@ -10,6 +10,13 @@ from .qa_extractor import QAExtractor
 class RAGRetriever:
     """RAG 检索器 - 封装检索逻辑"""
 
+    # 纠错检测关键词（当用户说这些词时，说明之前的回答是错的）
+    CORRECTION_KEYWORDS = [
+        "是错的", "错误", "不对", "不是这样", "应该", "正确的是",
+        "纠正", "更正", "修正", "准确", "正确答案是", "不对，应该",
+        "错了", "你说错了", "解释错了", "你的理解是错的"
+    ]
+
     def __init__(
         self,
         embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2",
@@ -41,7 +48,7 @@ class RAGRetriever:
         """初始化向量存储"""
         if self.vector_store is None:
             self._init_embedding_model()
-            dimension = self.embedding_model.get_sentence_embedding_dimension()
+            dimension = self.embedding_model.get_embedding_dimension()
             self.vector_store = VectorStore(dimension=dimension)
 
     def index_conversation(self, messages: list):
@@ -69,10 +76,16 @@ class RAGRetriever:
             self._init_vector_store()
             results = self.vector_store.search(query_embedding, top_k=top_k)
 
-            filtered_results = [
-                r for r in results
-                if r["distance"] < (1 - self.similarity_threshold)
-            ]
+            if self.similarity_threshold > 0:
+                # For L2 distance, lower is better. threshold = (1 - similarity_threshold) * 10
+                # e.g., similarity_threshold=0.6 -> threshold=4.0
+                threshold = (1 - self.similarity_threshold) * 10
+                filtered_results = [
+                    r for r in results
+                    if r["distance"] < threshold
+                ]
+            else:
+                filtered_results = results
             return filtered_results
         except Exception as e:
             print(f"[WARN] RAG retrieval failed: {e}")
@@ -103,10 +116,43 @@ class RAGRetriever:
             return False
         try:
             self._init_embedding_model()
-            dimension = self.embedding_model.get_sentence_embedding_dimension()
+            dimension = self.embedding_model.get_embedding_dimension()
             self.vector_store = VectorStore(dimension=dimension)
             self.vector_store.load(index_path)
             return True
         except Exception as e:
             print(f"[WARN] Failed to load RAG index: {e}")
             return False
+
+    def is_correction(self, user_message: str) -> bool:
+        """检测用户是否在纠正之前的错误回答
+
+        Args:
+            user_message: 用户输入
+
+        Returns:
+            True 如果检测到纠错意图
+        """
+        user_lower = user_message.lower()
+        return any(keyword in user_lower for keyword in self.CORRECTION_KEYWORDS)
+
+    def cleanup_error_qa(self, user_message: str, conversation_history: list):
+        """当检测到用户纠错时，清理之前错误的 QA 对
+
+        Args:
+            user_message: 用户当前的纠错消息
+            assistant_response: 之前 Assistant 的错误回答
+
+        Returns:
+            清理的 QA 对数量
+        """
+        if not self.vector_store or self.vector_store.index.ntotal == 0:
+            return 0
+
+        # 从历史中找到最近的错误回答（这里简化处理，实际可能需要更复杂的匹配）
+        # 策略：如果检测到纠错，删除最近索引的包含"错"字的 QA 对
+        removed = self.vector_store.remove_by_keywords(["错", "不对"])
+        if removed > 0:
+            print(f"[INFO] Cleaned up {removed} error QA pairs from RAG index")
+            self.save_index()
+        return removed

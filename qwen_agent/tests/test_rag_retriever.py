@@ -45,10 +45,12 @@ def test_rag_retriever_retrieve_filters_by_threshold():
     mock_st_instance.get_sentence_embedding_dimension.return_value = 4
 
     mock_vs = Mock()
-    # One result within threshold (distance < 0.4), one outside
+    # L2 distances for 384-dim embeddings typically range from 0 to ~50
+    # similarity_threshold=0.6 -> threshold=(1-0.6)*10=4.0
+    # distance < 4.0 passes, distance >= 4.0 fails
     mock_vs.search.return_value = [
-        {"text": "相关问题", "distance": 0.3},  # passes filter (0.3 < 0.4)
-        {"text": "不相关问题", "distance": 0.8},  # fails filter (0.8 >= 0.4)
+        {"text": "相关问题", "distance": 2.5},  # passes filter (2.5 < 4.0)
+        {"text": "不相关问题", "distance": 6.0},  # fails filter (6.0 >= 4.0)
     ]
 
     retriever = RAGRetriever(embedding_model=mock_st_instance, similarity_threshold=0.6)

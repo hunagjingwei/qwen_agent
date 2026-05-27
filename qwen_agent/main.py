@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Qwen3.5-4B Agent CLI 入口"""
 import sys
+import os
+
+# Add parent directory to path so 'qwen_agent' imports work
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -12,12 +17,12 @@ console = Console()
 MODEL_PATH = "/home/wujie/LLM_project/Qwen3.5-4B"
 
 
-def truncate_history(messages, max_rounds=10):
+def truncate_history(messages, max_rounds=2):
     """截断对话历史，保留 system prompt + 最近 N 轮完整对话
 
     Args:
         messages: 对话消息列表
-        max_rounds: 最多保留的对话轮数
+        max_rounds: 最多保留的对话轮数（默认2轮，避免token超限）
 
     Returns:
         截断后的消息列表
@@ -74,7 +79,7 @@ def main():
         sys.exit(1)
 
     conversation_history = []
-    MAX_ROUNDS = 10  # 最多保留10轮对话
+    MAX_ROUNDS = 2  # 最多保留2轮对话（避免token超限）
 
     while True:
         try:
@@ -95,7 +100,22 @@ def main():
 
             with console.status("[bold green]思考中...[/bold green]"):
                 result = agent.run(user_input, conversation_history)
-                conversation_history = truncate_history(result["messages"], MAX_ROUNDS)
+
+            # Debug: 打印结果
+            print(f"[DEBUG] result keys: {result.keys()}", file=sys.stderr)
+            print(f"[DEBUG] response length: {len(result.get('response', ''))}", file=sys.stderr)
+            print(f"[DEBUG] response preview: {result.get('response', '')[:300]}", file=sys.stderr)
+            print(f"[DEBUG] messages count: {len(result.get('messages', []))}", file=sys.stderr)
+            if result.get('tool_calls'):
+                tc = result['tool_calls'][0]
+                print(f"[DEBUG] tool_call name: {tc.get('name')}", file=sys.stderr)
+                args = tc.get('arguments', {})
+                print(f"[DEBUG] tool_call args keys: {args.keys()}", file=sys.stderr)
+                if 'code' in args:
+                    code_preview = args['code'][:100] if args['code'] else 'EMPTY'
+                    print(f"[DEBUG] code preview: {code_preview}...", file=sys.stderr)
+
+            conversation_history = truncate_history(result["messages"], MAX_ROUNDS)
 
             response = result["response"]
             console.print(Panel(response, title="[bold green]Assistant[/bold green]", border_style="green"))

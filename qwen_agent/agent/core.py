@@ -431,6 +431,8 @@ class Agent:
             "simple_interest": self._math_tool,
             "loan_repayment": self._math_tool,
             "sequence_sum": self._math_tool,
+            "savings_find_year": self._math_tool,
+            "savings_accumulation": self._math_tool,
             "probability_calc": self._math_tool,
             "triangle_area": self._math_tool,
             "circle_area": self._math_tool,
@@ -526,24 +528,44 @@ class Agent:
 
                 # 检查工具执行结果
                 if tool_results and tool_results[0].get("success"):
-                    # 兼容 output (code_executor) 和 result (math_tool) 两种格式
-                    output = tool_results[0].get("output") or tool_results[0].get("result", "")
-                    # 对于其他格式（如 area, volume, monotonic_intervals 等），转为字符串
-                    if not output:
-                        # 提取有意义的值（按优先级排序）
-                        for key in ['area', 'volume', 'sum', 'total_amount', 'monthly_payment',
-                                    'monotonic_intervals', 'critical_points', 'extrema',
-                                    'inflection_points', 'derivative', 'limit', 'solution', 'solutions',
-                                    'result', 'output']:
-                            if key in tool_results[0]:
-                                val = tool_results[0][key]
-                                if isinstance(val, list):
-                                    output = ', '.join(str(v) for v in val)
-                                else:
-                                    output = str(val)
-                                break
+                    tool_name = tool_results[0].get("tool_name", "")
+
+                    # 根据工具类型决定输出优先级
+                    if tool_name == "loan_repayment":
+                        # 贷款问题应该返回月供，不是总额
+                        output = str(tool_results[0].get("monthly_payment", ""))
+                        if not output or output == "None":
+                            output = str(tool_results[0].get("total_amount", ""))
+                    else:
+                        # 兼容 output (code_executor) 和 result (math_tool) 两种格式
+                        output = tool_results[0].get("output") or tool_results[0].get("result", "")
+                        # 对于其他格式（如 area, volume 等），转为字符串
+                        if not output:
+                            # 提取有意义的值（按优先级排序）
+                            # extrema 需要特殊处理，格式化输出
+                            if 'extrema' in tool_results[0] and tool_results[0]['extrema']:
+                                extrema_list = tool_results[0]['extrema']
+                                extrema_parts = []
+                                for e in extrema_list:
+                                    if isinstance(e, dict) and 'point' in e and 'value' in e and 'type' in e:
+                                        extrema_parts.append(f"{e['type']}: x={e['point']}, f(x)={e['value']}")
+                                    else:
+                                        extrema_parts.append(str(e))
+                                output = '; '.join(extrema_parts)
+                            else:
+                                for key in ['area', 'volume', 'sum', 'monthly_payment',
+                                            'monotonic_intervals', 'critical_points',
+                                            'inflection_points', 'derivative', 'limit', 'solution', 'solutions',
+                                            'total_amount', 'result', 'output']:
+                                    if key in tool_results[0]:
+                                        val = tool_results[0][key]
+                                        if isinstance(val, list):
+                                            output = ', '.join(str(v) for v in val)
+                                        else:
+                                            output = str(val)
+                                        break
                     print(f"[DEBUG] checking output, is truthy={bool(output)}, output={repr(output)[:50]}", file=sys.stderr)
-                    if output:
+                    if output and output != "None":
                         print(f"[DEBUG] returning DIRECT OUTPUT", file=sys.stderr)
                         # 直接使用工具输出作为回答
                         return {
@@ -584,6 +606,11 @@ class Agent:
 
         # RAG 检索相关历史经验
         if self.rag_retriever:
+            # 检测用户是否在纠错
+            if self.rag_retriever.is_correction(user_message):
+                print("[INFO] Correction detected, cleaning up error QA from RAG index...")
+                self.rag_retriever.cleanup_error_qa(user_message, conversation_history)
+
             retrieved = self.rag_retriever.retrieve(user_message, top_k=3)
             if retrieved:
                 rag_context = self.rag_retriever.format_context(retrieved)
@@ -719,7 +746,7 @@ class Agent:
                 "simple_interest", "loan_repayment", "sequence_sum", "probability_calc",
                 "triangle_area", "circle_area", "rectangle_area", "sphere_volume",
                 "cylinder_volume", "cone_volume", "cuboid_volume", "matrix_operation",
-                "vector_operation"
+                "vector_operation", "savings_find_year", "savings_accumulation"
             ]:
                 result = tool_func(func_name=tool_name, **arguments)
             else:
@@ -739,7 +766,7 @@ class Agent:
 
     def _chat_tool(self, message: str) -> Dict[str, Any]:
         """通用对话工具"""
-        from ..tools.chat import chat
+        from qwen_agent.tools.chat import chat
 
         try:
             result = chat(message, self.model_path, CHAT_TEMPLATE)
@@ -799,7 +826,7 @@ class Agent:
         end_line: Optional[int] = None
     ) -> Dict[str, Any]:
         """文档读取工具"""
-        from ..tools.document import document_reader
+        from qwen_agent.tools.document import document_reader
 
         try:
             result = document_reader(file_path, start_line, end_line)
@@ -836,7 +863,7 @@ class Agent:
 
     def _translator_tool(self, text: str, source_lang: str, target_lang: str) -> Dict[str, Any]:
         """翻译工具"""
-        from ..tools.translator import translator
+        from qwen_agent.tools.translator import translator
 
         try:
             result = translator(text, source_lang, target_lang)
@@ -861,7 +888,7 @@ class Agent:
 
     def _weather_tool(self, city: str) -> Dict[str, Any]:
         """天气查询工具"""
-        from ..tools.weather import weather
+        from qwen_agent.tools.weather import weather
 
         try:
             result = weather(city)

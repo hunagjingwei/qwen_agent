@@ -61,3 +61,45 @@ class VectorStore:
                 self.texts = meta["texts"]
         except Exception as e:
             raise IOError(f"Failed to load index from {path}: {e}")
+
+    def remove_by_keywords(self, keywords: list) -> int:
+        """删除包含关键词的文本，返回删除数量"""
+        original_count = len(self.texts)
+        # 找出不包含任何关键词的文本
+        filtered_texts = []
+        for text in self.texts:
+            if not any(kw in text for kw in keywords):
+                filtered_texts.append(text)
+        self.texts = filtered_texts
+        return original_count - len(self.texts)
+
+    def rebuild_with_filter(self, filter_func):
+        """根据过滤函数重建索引
+
+        Args:
+            filter_func: 接收 (text, vector) 返回 True 保留，False 删除
+
+        Returns:
+            删除的条目数量
+        """
+        # 收集保留的文本和向量
+        kept_texts = []
+        kept_vectors = []
+
+        for i, text in enumerate(self.texts):
+            vector = self.index.reconstruct(i)
+            if filter_func(text, vector):
+                kept_texts.append(text)
+                kept_vectors.append(vector)
+
+        removed_count = len(self.texts) - len(kept_texts)
+
+        # 重建索引
+        if kept_vectors:
+            self.index.reset()
+            self.index.add(np.array(kept_vectors).astype('float32'))
+        else:
+            self.index.reset()
+
+        self.texts = kept_texts
+        return removed_count
