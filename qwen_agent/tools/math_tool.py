@@ -703,69 +703,81 @@ def probability(n: int, k: int, p: float = 0.5,
         return {"success": False, "result": 0, "error": str(e)}
 
 
-def savings_find_year(annual_deposit: float, annual_rate: float,
-                      target: float, initial_principal: float = 0,
+def savings_find_year(annual_deposit: float = None, annual_rate: float = None,
+                      target: float = None, initial_principal: float = 0,
+                      monthly_deposit: float = None,
                       max_years: int = 100) -> Dict[str, Any]:
     """计算存款多少年后超过目标金额（逐年存款+复利）
 
     Args:
-        annual_deposit: 每年存款金额
+        annual_deposit: 每年存款金额（与 monthly_deposit 二选一）
         annual_rate: 年利率（如 0.03 表示 3%）
         target: 目标金额
         initial_principal: 初始本金（默认0）
+        monthly_deposit: 每月存款金额（与 annual_deposit 二选一）
         max_years: 最大计算年数（默认100年）
 
     Returns:
         包含第几年超过目标、当时存款总额等信息
     """
     try:
-        annual_deposit = float(annual_deposit)
         annual_rate = float(annual_rate)
         target = float(target)
         initial_principal = float(initial_principal)
         max_years = int(max_years)
+
+        # 判断是月存款还是年存款模式
+        monthly_mode = monthly_deposit is not None
+        if monthly_mode:
+            monthly_deposit = float(monthly_deposit)
+            monthly_rate = annual_rate / 12
+        else:
+            annual_deposit = float(annual_deposit)
+            monthly_deposit = annual_deposit / 12
+            monthly_rate = annual_rate / 12
 
         if annual_rate < 0:
             return {"success": False, "error": "利率不能为负"}
 
         balance = initial_principal
         year = 0
-        yearly_data = []
+        monthly_data = []
 
         while year < max_years:
             year += 1
-            # 复利：本金 + 利息 + 新存款
-            balance = balance * (1 + annual_rate) + annual_deposit
-            yearly_data.append({
-                "year": year,
-                "deposit": annual_deposit,
-                "interest": round(balance * annual_rate / (1 + annual_rate) if balance > 0 else 0, 2),
-                "balance": round(balance, 2)
-            })
+            for month in range(1, 13):
+                # 复利：上月余额 + 月利息 + 月存款
+                balance = balance * (1 + monthly_rate) + monthly_deposit
+                monthly_data.append({
+                    "month": (year - 1) * 12 + month,
+                    "deposit": monthly_deposit,
+                    "balance": round(balance, 2)
+                })
 
             if balance >= target:
                 break
 
         if balance >= target:
-            total_deposited = initial_principal + year * annual_deposit
+            total_deposited = initial_principal + len(monthly_data) * monthly_deposit
             return {
                 "success": True,
-                "type": "逐年存款复利计算",
-                "annual_deposit": float(annual_deposit),
+                "type": "逐月存款复利计算" if monthly_mode else "逐年存款复利计算",
+                "monthly_deposit": float(monthly_deposit),
                 "annual_rate": float(annual_rate),
                 "initial_principal": float(initial_principal),
                 "target": float(target),
-                "target_year": year,
+                "target_year": round((len(monthly_data)) / 12, 1),
+                "target_months": len(monthly_data),
                 "target_balance": round(float(balance), 2),
                 "total_deposited": round(float(total_deposited), 2),
                 "total_interest": round(float(balance - total_deposited), 2),
-                "yearly_sample": yearly_data[:3] + [yearly_data[-1]] if len(yearly_data) > 4 else yearly_data,
+                "monthly_sample": monthly_data[:3] + [monthly_data[-1]] if len(monthly_data) > 4 else monthly_data,
                 "error": ""
             }
         else:
             return {
                 "success": False,
-                "error": f"经过 {max_years} 年仍未达到目标金额，当前存款 {balance:.2f}"
+                "error": f"经过 {year} 年仍未达到目标金额，当前存款 {balance:.2f}"
             }
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -1124,10 +1136,11 @@ def math_tool(func_name: str, **kwargs) -> Dict[str, Any]:
                                                  kwargs.get("payment_type", "equal_principal")),
 
         # 存款计算
-        "savings_find_year": lambda: savings_find_year(kwargs.get("annual_deposit", 0),
+        "savings_find_year": lambda: savings_find_year(kwargs.get("annual_deposit", None),
                                                        kwargs.get("annual_rate", 0),
                                                        kwargs.get("target", 0),
                                                        kwargs.get("initial_principal", 0),
+                                                       kwargs.get("monthly_deposit", None),
                                                        kwargs.get("max_years", 100)),
         "savings_accumulation": lambda: savings_accumulation(kwargs.get("annual_deposit", 0),
                                                              kwargs.get("annual_rate", 0),
