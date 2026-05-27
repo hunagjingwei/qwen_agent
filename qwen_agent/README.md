@@ -70,17 +70,30 @@ main.py → Agent (core.py) → 工具注册表 → 各工具实现
 
 ### RAG 机制
 
-对话保存时：
-1. `QAExtractor.extract()` 从对话历史提取 QA 对
-2. `format_for_rag()` 格式化
-3. `SentenceTransformer` 向量化
-4. 存入 FAISS 索引
+**依赖模型**: `paraphrase-multilingual-MiniLM-L12-v2` (Sentence-Transformers)
 
-检索时：query 编码 → FAISS 搜索 → 返回相似 QA 作为上下文
+**依赖库**: FAISS (向量索引)
 
-### RAG 纠错机制
+**向量检索流程**:
+```
+对话保存 → QAExtractor.extract() 提取 QA 对
+                    ↓
+          format_for_rag() 格式化文本
+                    ↓
+          SentenceTransformer.encode() 向量化
+                    ↓
+          FAISS index.add() 存入索引
+                    ↓
+               保存到磁盘
 
-用户输入包含"是错的"、"不对"等关键词时：
+检索时: query → encode() → FAISS.search() → 返回相似 QA
+```
+
+**相似度阈值**: L2 距离 < 4.0 (对应 cosine similarity > 0.6)
+
+**RAG 纠错机制**:
+
+用户输入包含"是错的"、"不对"、"纠正"等关键词时：
 - `is_correction()` 检测纠错意图
 - `cleanup_error_qa()` 删除包含"错"、"不对"的错误 QA 对
 - 防止错误知识被记住
