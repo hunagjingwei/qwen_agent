@@ -98,7 +98,7 @@ main.py → Agent (core.py) → 工具注册表 → 各工具实现
 模型路径在 `main.py` 中修改：
 
 ```python
-MODEL_PATH = "/home/wuiie/LLM_project/Qwen3.5-4B"
+MODEL_PATH = "/home/user/LLM_project/Qwen3.5-4B"
 ```
 
 天气 API Key 在 `tools/weather.py` 中修改：
